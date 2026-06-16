@@ -1,0 +1,17 @@
+
+PLAY [Verify Data] *************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [redis-node-1]
+
+TASK [Verify 1000 keys] ********************************************************
+changed: [redis-node-1]
+
+TASK [Print verify result] *****************************************************
+ok: [redis-node-1] => {
+    "msg": "PASS: 1000, FAIL: 0"
+}
+
+PLAY RECAP *********************************************************************
+redis-node-1               : ok=3    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

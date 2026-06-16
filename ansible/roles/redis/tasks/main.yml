@@ -1,0 +1,46 @@
+---
+- name: Install dependencies
+  apt:
+    name:
+      - build-essential
+      - tcl
+      - wget
+    state: present
+    update_cache: yes
+
+- name: Create redis directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ redis_dir }}"
+    - "{{ redis_data_dir }}"
+
+- name: Download Redis source
+  get_url:
+    url: "https://download.redis.io/releases/redis-{{ redis_version }}.tar.gz"
+    dest: "/tmp/redis-{{ redis_version }}.tar.gz"
+
+- name: Extract Redis
+  unarchive:
+    src: "/tmp/redis-{{ redis_version }}.tar.gz"
+    dest: /tmp/
+    remote_src: yes
+
+- name: Compile Redis
+  make:
+    chdir: "/tmp/redis-{{ redis_version }}"
+
+- name: Install Redis binaries
+  make:
+    chdir: "/tmp/redis-{{ redis_version }}"
+    target: install
+
+- name: Create Redis config
+  template:
+    src: redis.conf.j2
+    dest: "{{ redis_dir }}/redis.conf"
+
+- name: Start Redis
+  shell: redis-server {{ redis_dir }}/redis.conf --daemonize yes

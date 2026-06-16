@@ -1,0 +1,26 @@
+
+PLAY [Seed Data] ***************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [redis-node-1]
+
+TASK [Seed keys] ***************************************************************
+changed: [redis-node-1]
+
+TASK [Count OK responses] ******************************************************
+ok: [redis-node-1]
+
+TASK [Get current master node IPs] *********************************************
+changed: [redis-node-1]
+
+TASK [Count keys per master and total] *****************************************
+changed: [redis-node-1]
+
+TASK [Print seed summary] ******************************************************
+ok: [redis-node-1] => {
+    "msg": "Keys seeded (SET OK responses): 1000 / 1000\nFailures: 0\nDistribution across masters:\n10.10.0.16: 324 keys\n10.10.0.14: 343 keys\n10.10.0.15: 333 keys\nTOTAL: 1000\n"
+}
+
+PLAY RECAP *********************************************************************
+redis-node-1               : ok=6    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

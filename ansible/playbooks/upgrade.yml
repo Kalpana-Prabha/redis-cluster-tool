@@ -1,0 +1,275 @@
+---
+- name: Pre-upgrade Version Check
+  hosts: redis-node-1
+  become: yes
+  vars:
+    target_version: "7.2.6"
+  tasks:
+    - name: Check current Redis version on all nodes
+      shell: |
+        for ip in 10.10.0.11 10.10.0.12 10.10.0.13 10.10.0.14 10.10.0.15 10.10.0.16; do
+          redis-cli -h $ip info server | grep redis_version | cut -d: -f2 | tr -d '\r'
+        done
+      register: current_versions
+      changed_when: false
+
+    - name: Set upgrade needed fact
+      set_fact:
+        upgrade_needed: "{{ current_versions.stdout_lines | reject('equalto', target_version) | list | length > 0 }}"
+
+    - name: Print already-upgraded message
+      debug:
+        msg: >
+          All 6 nodes already on Redis {{ target_version }} - nothing to do (idempotent).
+          Current versions: {{ current_versions.stdout_lines | join(', ') }}
+      when: not (upgrade_needed | bool)
+
+    - name: Print pre-upgrade version summary
+      debug:
+        msg: >
+          Starting upgrade to {{ target_version }}.
+          Current versions: {{ current_versions.stdout_lines | join(', ') }}
+      when: upgrade_needed | bool
+
+- name: Rolling Upgrade - Replicas First
+  hosts: redis_replicas
+  become: yes
+  serial: 1
+  vars:
+    target_version: "7.2.6"
+  tasks:
+    - name: Skip if already upgraded
+      meta: end_host
+      when: not (hostvars['redis-node-1']['upgrade_needed'] | bool)
+
+    - name: Pre-flight check
+      shell: redis-cli -h 10.10.0.13 cluster info | grep cluster_state
+      register: cluster_state
+      ignore_errors: yes
+
+    - name: Start Redis
+      shell: |
+        if [ -f /etc/redis/nodes.conf ]; then
+          sed -i 's/,tls-port=[0-9]*//g' /etc/redis/nodes.conf
+          sed -i 's/,shard-id=[a-f0-9]*//g' /etc/redis/nodes.conf
+        fi
+        touch /var/log/redis.log
+        chown ansible:ansible /var/log/redis.log
+        redis-server /etc/redis/redis.conf --daemonize yes
+      delegate_to: redis-node-1
+      when: cluster_state.rc != 0
+
+    - name: Wait for cluster after restart
+      shell: redis-cli -h 10.10.0.13 cluster info | grep cluster_state
+      register: cluster_wait
+      until: "'cluster_state:ok' in cluster_wait.stdout"
+      retries: 10
+      delay: 3
+      when: cluster_state.rc != 0
+
+    - name: Stop Redis
+      shell: redis-cli -h {{ hostvars[inventory_hostname]['container_ip'] }} shutdown nosave
+      ignore_errors: yes
+      delegate_to: redis-node-1
+
+    - name: Download Redis
+      get_url:
+        url: "https://download.redis.io/releases/redis-{{ target_version }}.tar.gz"
+        dest: "/tmp/redis-{{ target_version }}.tar.gz"
+
+    - name: Extract Redis
+      unarchive:
+        src: "/tmp/redis-{{ target_version }}.tar.gz"
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Compile Redis
+      make:
+        chdir: "/tmp/redis-{{ target_version }}"
+
+    - name: Install Redis
+      make:
+        chdir: "/tmp/redis-{{ target_version }}"
+        target: install
+
+    - name: Start Redis
+      shell: |
+        if [ -f /etc/redis/nodes.conf ]; then
+          sed -i 's/,tls-port=[0-9]*//g' /etc/redis/nodes.conf
+          sed -i 's/,shard-id=[a-f0-9]*//g' /etc/redis/nodes.conf
+        fi
+        touch /var/log/redis.log
+        chown ansible:ansible /var/log/redis.log
+        redis-server /etc/redis/redis.conf --daemonize yes
+
+    - name: Wait for Redis
+      shell: redis-cli -h {{ hostvars[inventory_hostname]['container_ip'] }} ping
+      register: ping_result
+      until: ping_result.stdout == "PONG"
+      retries: 15
+      delay: 2
+      delegate_to: redis-node-1
+
+    - name: Check cluster state
+      ignore_errors: yes
+      shell: redis-cli -h 10.10.0.13 cluster info | grep cluster_state
+      register: post_state
+      delegate_to: redis-node-1
+
+    - name: Print progress
+      debug:
+        msg: "Upgraded {{ inventory_hostname }} - {{ post_state.stdout }}"
+
+- name: Rolling Upgrade - Masters
+  hosts: redis_masters
+  become: yes
+  serial: 1
+  vars:
+    target_version: "7.2.6"
+  tasks:
+    - name: Skip if already upgraded
+      meta: end_host
+      when: not (hostvars['redis-node-1']['upgrade_needed'] | bool)
+
+    - name: Pre-flight check
+      shell: redis-cli -h 10.10.0.13 cluster info | grep cluster_state
+      register: cluster_state
+      ignore_errors: yes
+
+    - name: Restart redis-node-1 if down
+      shell: |
+        touch /var/log/redis.log
+        chown ansible:ansible /var/log/redis.log
+        redis-server /etc/redis/redis.conf --daemonize yes
+        sleep 5
+      when: cluster_state.rc != 0
+
+    - name: Wait for cluster after restart
+      shell: redis-cli -h 10.10.0.13 cluster info | grep cluster_state
+      register: cluster_wait
+      until: "'cluster_state:ok' in cluster_wait.stdout"
+      retries: 10
+      delay: 3
+      when: cluster_state.rc != 0
+
+    - name: Get master ID
+      shell: redis-cli -h {{ hostvars[inventory_hostname]['container_ip'] }} cluster myid
+      register: master_id
+      ignore_errors: yes
+
+    - name: Restart if myid failed
+      shell: |
+        rm -f /etc/redis/nodes.conf
+        touch /var/log/redis.log
+        chown ansible:ansible /var/log/redis.log
+        redis-server /etc/redis/redis.conf --daemonize yes
+        sleep 5
+      when: master_id.rc != 0
+
+    - name: Get master ID retry
+      shell: redis-cli -h {{ hostvars[inventory_hostname]['container_ip'] }} cluster myid
+      register: master_id_retry
+      when: master_id.rc != 0
+
+    - name: Set master ID
+      set_fact:
+        final_master_id: "{{ master_id_retry.stdout if master_id.rc != 0 else master_id.stdout }}"
+
+    - name: Get replica IP
+      shell: "redis-cli -h 10.10.0.13 cluster nodes | grep -E 'slave|replica' | grep {{ final_master_id }} | awk '{print $2}' | cut -d: -f1 | cut -d@ -f1"
+      register: replica_ip
+      delegate_to: redis-node-1
+
+    - name: Trigger failover
+      shell: redis-cli -h {{ replica_ip.stdout }} cluster failover
+      delegate_to: redis-node-1
+
+    - name: Wait for failover
+      shell: redis-cli -h {{ hostvars[inventory_hostname]["container_ip"] }} role | head -1
+      register: role_check
+      until: role_check.stdout == "slave"
+      retries: 15
+      delay: 3
+      delegate_to: redis-node-1
+
+    - name: Stop Redis
+      shell: redis-cli -h {{ hostvars[inventory_hostname]['container_ip'] }} shutdown nosave
+      ignore_errors: yes
+      delegate_to: redis-node-1
+
+    - name: Download Redis
+      get_url:
+        url: "https://download.redis.io/releases/redis-{{ target_version }}.tar.gz"
+        dest: "/tmp/redis-{{ target_version }}.tar.gz"
+
+    - name: Extract Redis
+      unarchive:
+        src: "/tmp/redis-{{ target_version }}.tar.gz"
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Compile Redis
+      make:
+        chdir: "/tmp/redis-{{ target_version }}"
+
+    - name: Install Redis
+      make:
+        chdir: "/tmp/redis-{{ target_version }}"
+        target: install
+
+    - name: Start Redis
+      shell: |
+        if [ -f /etc/redis/nodes.conf ]; then
+          sed -i 's/,tls-port=[0-9]*//g' /etc/redis/nodes.conf
+          sed -i 's/,shard-id=[a-f0-9]*//g' /etc/redis/nodes.conf
+        fi
+        touch /var/log/redis.log
+        chown ansible:ansible /var/log/redis.log
+        redis-server /etc/redis/redis.conf --daemonize yes
+
+    - name: Wait for Redis
+      shell: redis-cli -h {{ hostvars[inventory_hostname]['container_ip'] }} ping
+      register: ping_result
+      until: ping_result.stdout == "PONG"
+      retries: 15
+      delay: 2
+      delegate_to: redis-node-1
+
+    - name: Check cluster state
+      ignore_errors: yes
+      shell: redis-cli -h 10.10.0.13 cluster info | grep cluster_state
+      register: post_state
+      delegate_to: redis-node-1
+
+    - name: Print progress
+      debug:
+        msg: "Upgraded {{ inventory_hostname }} - {{ post_state.stdout }}"
+
+- name: Post Upgrade Verification
+  hosts: redis-node-1
+  become: yes
+  tasks:
+    - name: Skip if already upgraded
+      meta: end_host
+      when: not (hostvars['redis-node-1']['upgrade_needed'] | bool)
+
+    - name: Verify all keys
+      shell: |
+        PASS=0
+        FAIL=0
+        for i in $(seq 1 1000); do
+          KEY=$(printf "key:%04d" $i)
+          EXPECTED=$(echo -n "$KEY" | sha256sum | awk '{print $1}')
+          ACTUAL=$(redis-cli -c -h 10.10.0.11 GET "$KEY")
+          if [ "$ACTUAL" = "$EXPECTED" ]; then
+            PASS=$((PASS+1))
+          else
+            FAIL=$((FAIL+1))
+          fi
+        done
+        echo "PASS: $PASS, FAIL: $FAIL"
+      register: verify_result
+
+    - name: Print final result
+      debug:
+        msg: "UPGRADE COMPLETE - {{ verify_result.stdout }}"

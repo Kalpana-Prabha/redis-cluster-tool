@@ -1,0 +1,16 @@
+---
+- name: Cluster Status
+  hosts: redis-node-1
+  become: yes
+  tasks:
+    - name: Get cluster info
+      shell: redis-cli -h 10.10.0.11 cluster nodes
+      register: cluster_nodes
+
+    - name: Get cluster state
+      shell: redis-cli -h 10.10.0.11 cluster info | grep cluster_state
+      register: cluster_state
+
+    - name: Print status
+      debug:
+        msg: "{{ cluster_state.stdout }}\n{{ cluster_nodes.stdout }}"

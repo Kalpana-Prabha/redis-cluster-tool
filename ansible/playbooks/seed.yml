@@ -1,0 +1,43 @@
+---
+- name: Seed Data
+  hosts: redis-node-1
+  become: yes
+  vars:
+    num_keys: 1000
+  tasks:
+    - name: Seed keys
+      shell: |
+        for i in $(seq 1 {{ num_keys }}); do
+          KEY=$(printf "key:%04d" $i)
+          VALUE=$(echo -n "$KEY" | sha256sum | awk '{print $1}')
+          redis-cli -c -h 10.10.0.11 SET "$KEY" "$VALUE"
+        done
+      register: seed_result
+
+    - name: Count OK responses
+      set_fact:
+        ok_count: "{{ seed_result.stdout_lines | select('match', '^OK$') | list | length }}"
+
+    - name: Get current master node IPs
+      shell: |
+        redis-cli -h 10.10.0.11 cluster nodes | grep master | awk '{print $2}' | cut -d: -f1 | cut -d@ -f1
+      register: master_ips
+
+    - name: Count keys per master and total
+      shell: |
+        TOTAL=0
+        for ip in {{ master_ips.stdout_lines | join(' ') }}; do
+          COUNT=$(redis-cli -h $ip DBSIZE | tr -d '\r')
+          echo "$ip: $COUNT keys"
+          TOTAL=$((TOTAL + COUNT))
+        done
+        echo "TOTAL: $TOTAL"
+      register: key_count
+
+    - name: Print seed summary
+      debug:
+        msg: |
+          Keys seeded (SET OK responses): {{ ok_count }} / {{ num_keys }}
+          Failures: {{ num_keys|int - ok_count|int }}
+          Distribution across masters:
+          {{ key_count.stdout }}

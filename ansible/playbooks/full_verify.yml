@@ -1,0 +1,58 @@
+---
+- name: Full Verification
+  hosts: redis-node-1
+  become: yes
+  tasks:
+    - name: Check cluster state
+      shell: redis-cli -h 10.10.0.11 cluster info | grep cluster_state
+      register: cluster_state
+
+    - name: Check all slots covered
+      shell: redis-cli -h 10.10.0.11 cluster info | grep cluster_slots_ok
+      register: slots_ok
+
+    - name: Check node versions
+      shell: |
+        for ip in 10.10.0.11 10.10.0.12 10.10.0.13 10.10.0.14 10.10.0.15 10.10.0.16; do
+          echo "$ip: $(redis-cli -h $ip info server | grep redis_version)"
+        done
+      register: versions
+
+    - name: Check replication lag
+      shell: |
+        redis-cli -h 10.10.0.11 cluster nodes | grep slave | while read line; do
+          ip=$(echo $line | awk '{print $2}' | cut -d: -f1 | cut -d@ -f1)
+          status=$(redis-cli -h $ip info replication | grep master_link_status)
+          echo "$ip: $status"
+        done
+      register: replication
+
+    - name: Verify data integrity
+      shell: |
+        PASS=0
+        FAIL=0
+        for i in $(seq 1 1000); do
+          KEY=$(printf "key:%04d" $i)
+          EXPECTED=$(echo -n "$KEY" | sha256sum | awk '{print $1}')
+          ACTUAL=$(redis-cli -c -h 10.10.0.11 GET "$KEY")
+          if [ "$ACTUAL" = "$EXPECTED" ]; then
+            PASS=$((PASS+1))
+          else
+            FAIL=$((FAIL+1))
+          fi
+        done
+        echo "PASS: $PASS, FAIL: $FAIL"
+      register: data_verify
+
+    - name: Print full verification result
+      debug:
+        msg: |
+          ========== FULL VERIFICATION REPORT ==========
+          1. Cluster State: {{ cluster_state.stdout }}
+          2. Slots: {{ slots_ok.stdout }}
+          3. Versions:
+          {{ versions.stdout }}
+          4. Replication:
+          {{ replication.stdout }}
+          5. Data Integrity: {{ data_verify.stdout }}
+          ==============================================

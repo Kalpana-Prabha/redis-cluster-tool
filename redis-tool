@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+import subprocess
+import sys
+import os
+import argparse
+
+ANSIBLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ansible")
+INVENTORY = os.path.join(ANSIBLE_DIR, "inventory/hosts.ini")
+
+def check_prerequisites():
+    print("Checking prerequisites...")
+    ok = True
+
+    # Check Docker or Podman
+    for runtime in ["docker", "podman"]:
+        try:
+            result = subprocess.run([runtime, "--version"], capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"  ✓ {result.stdout.strip().split()[0]} found: {result.stdout.strip()}")
+                break
+        except FileNotFoundError:
+            continue
+    else:
+        print("  ✗ Container runtime not found (Docker or Podman)")
+        print("    Install Docker: https://docs.docker.com/engine/install/")
+        ok = False
+
+    # Check Ansible
+    try:
+        result = subprocess.run(["ansible", "--version"], capture_output=True, text=True)
+        if result.returncode == 0:
+            version_line = result.stdout.split("\n")[0]
+            print(f"  ✓ {version_line}")
+        else:
+            raise FileNotFoundError
+    except FileNotFoundError:
+        print("  ✗ Ansible not found")
+        print("    Install: pip install ansible")
+        ok = False
+
+    if not ok:
+        sys.exit(1)
+    print("  All prerequisites met. Proceeding...\n")
+
+def run_playbook(playbook, extra_vars=None):
+    cmd = ["ansible-playbook", "-i", INVENTORY,
+           os.path.join(ANSIBLE_DIR, "playbooks", playbook)]
+    if extra_vars:
+        for k, v in extra_vars.items():
+            cmd += ["-e", f"{k}={v}"]
+    result = subprocess.run(cmd, cwd=ANSIBLE_DIR)
+    return result.returncode
+
+def cmd_provision(args):
+    print(f"[redis-tool] Provisioning Redis {args.version} cluster...")
+    rc = run_playbook("provision.yml", {"redis_version": args.version})
+    if rc == 0:
+        print("\n[redis-tool] ✅ Provisioning complete!")
+    else:
+        print("\n[redis-tool] ❌ Provisioning failed!")
+        sys.exit(1)
+
+def cmd_data(args):
+    if args.action == "seed":
+        print(f"[redis-tool] Seeding {args.keys} keys...")
+        rc = run_playbook("seed.yml", {"num_keys": args.keys})
+        if rc == 0:
+            print("\n[redis-tool] ✅ Data seed complete!")
+        else:
+            print("\n[redis-tool] ❌ Data seed failed!")
+            sys.exit(1)
+    elif args.action == "verify":
+        print("[redis-tool] Verifying data...")
+        rc = run_playbook("verify.yml")
+        if rc == 0:
+            print("\n[redis-tool] ✅ Data verify complete!")
+        else:
+            print("\n[redis-tool] ❌ Data verify failed!")
+            sys.exit(1)
+
+def cmd_status(args):
+    print("[redis-tool] Fetching cluster status...")
+    rc = run_playbook("status.yml")
+    if rc != 0:
+        print("\n[redis-tool] ❌ Status check failed!")
+        sys.exit(1)
+
+def cmd_upgrade(args):
+    print(f"[redis-tool] Starting {args.strategy} upgrade to Redis {args.target_version}...")
+    rc = run_playbook("upgrade.yml", {"target_version": args.target_version})
+    if rc == 0:
+        print("\n[redis-tool] ✅ Upgrade complete!")
+    else:
+        print("\n[redis-tool] ❌ Upgrade failed!")
+        sys.exit(1)
+
+def cmd_verify(args):
+    print("[redis-tool] Running full verification...")
+    rc = run_playbook("full_verify.yml")
+    if rc == 0:
+        print("\n[redis-tool] ✅ Full verification passed!")
+    else:
+        print("\n[redis-tool] ❌ Verification failed!")
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(prog="redis-tool",
+                                     description="Redis Cluster Lifecycle Tool")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # provision
+    p_provision = subparsers.add_parser("provision")
+    p_provision.add_argument("--version", default="7.0.15")
+    p_provision.add_argument("--masters", type=int, default=3)
+    p_provision.add_argument("--replicas-per-master", type=int, default=1)
+
+    # data
+    p_data = subparsers.add_parser("data")
+    p_data.add_argument("action", choices=["seed", "verify"])
+    p_data.add_argument("--keys", type=int, default=1000)
+
+    # status
+    subparsers.add_parser("status")
+
+    # upgrade
+    p_upgrade = subparsers.add_parser("upgrade")
+    p_upgrade.add_argument("--target-version", required=True)
+    p_upgrade.add_argument("--strategy", default="rolling")
+
+    # verify
+    p_verify = subparsers.add_parser("verify")
+    p_verify.add_argument("--full", action="store_true")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    check_prerequisites()
+
+    if args.command == "provision":
+        cmd_provision(args)
+    elif args.command == "data":
+        cmd_data(args)
+    elif args.command == "status":
+        cmd_status(args)
+    elif args.command == "upgrade":
+        cmd_upgrade(args)
+    elif args.command == "verify":
+        cmd_verify(args)
+
+if __name__ == "__main__":
+    main()

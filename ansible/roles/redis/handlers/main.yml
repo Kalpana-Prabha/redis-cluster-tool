@@ -1,0 +1,9 @@
+---
+- name: restart redis
+  shell: |
+    redis-cli shutdown nosave 2>/dev/null || true
+    sleep 1
+    touch /var/log/redis.log
+    chown ansible:ansible /var/log/redis.log
+    redis-server /etc/redis/redis.conf --daemonize yes
+  listen: "restart redis"

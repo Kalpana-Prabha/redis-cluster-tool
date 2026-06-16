@@ -1,0 +1,110 @@
+
+PLAY [Provision Redis Cluster] *************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [redis-node-5]
+ok: [redis-node-1]
+ok: [redis-node-4]
+ok: [redis-node-2]
+ok: [redis-node-3]
+ok: [redis-node-6]
+
+TASK [redis : Install dependencies] ********************************************
+ok: [redis-node-5]
+ok: [redis-node-3]
+ok: [redis-node-2]
+ok: [redis-node-1]
+ok: [redis-node-4]
+ok: [redis-node-6]
+
+TASK [redis : Create redis directories] ****************************************
+changed: [redis-node-1] => (item=/etc/redis)
+changed: [redis-node-3] => (item=/etc/redis)
+changed: [redis-node-5] => (item=/etc/redis)
+changed: [redis-node-2] => (item=/etc/redis)
+changed: [redis-node-4] => (item=/etc/redis)
+changed: [redis-node-2] => (item=/var/lib/redis)
+changed: [redis-node-3] => (item=/var/lib/redis)
+changed: [redis-node-4] => (item=/var/lib/redis)
+changed: [redis-node-1] => (item=/var/lib/redis)
+changed: [redis-node-5] => (item=/var/lib/redis)
+changed: [redis-node-6] => (item=/etc/redis)
+changed: [redis-node-6] => (item=/var/lib/redis)
+
+TASK [redis : Download Redis source] *******************************************
+changed: [redis-node-5]
+changed: [redis-node-2]
+changed: [redis-node-4]
+changed: [redis-node-3]
+changed: [redis-node-1]
+changed: [redis-node-6]
+
+TASK [redis : Extract Redis] ***************************************************
+changed: [redis-node-1]
+changed: [redis-node-2]
+changed: [redis-node-5]
+changed: [redis-node-4]
+changed: [redis-node-3]
+changed: [redis-node-6]
+
+TASK [redis : Compile Redis] ***************************************************
+changed: [redis-node-4]
+changed: [redis-node-5]
+changed: [redis-node-1]
+changed: [redis-node-2]
+changed: [redis-node-3]
+changed: [redis-node-6]
+
+TASK [redis : Install Redis binaries] ******************************************
+changed: [redis-node-1]
+changed: [redis-node-4]
+changed: [redis-node-5]
+changed: [redis-node-3]
+changed: [redis-node-2]
+changed: [redis-node-6]
+
+TASK [redis : Create Redis config] *********************************************
+changed: [redis-node-4]
+changed: [redis-node-2]
+changed: [redis-node-3]
+changed: [redis-node-1]
+changed: [redis-node-5]
+changed: [redis-node-6]
+
+TASK [redis : Start Redis] *****************************************************
+changed: [redis-node-2]
+changed: [redis-node-5]
+changed: [redis-node-4]
+changed: [redis-node-3]
+changed: [redis-node-1]
+changed: [redis-node-6]
+
+PLAY [Form Redis Cluster] ******************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [redis-node-1]
+
+TASK [Wait for all Redis nodes to be ready] ************************************
+ok: [redis-node-1] => (item=10.10.0.11)
+ok: [redis-node-1] => (item=10.10.0.12)
+ok: [redis-node-1] => (item=10.10.0.13)
+ok: [redis-node-1] => (item=10.10.0.14)
+ok: [redis-node-1] => (item=10.10.0.15)
+ok: [redis-node-1] => (item=10.10.0.16)
+
+TASK [Create Redis Cluster] ****************************************************
+changed: [redis-node-1]
+
+TASK [Print cluster result] ****************************************************
+ok: [redis-node-1] => {
+    "msg": "\u001b[29;1m>>> Performing hash slots allocation on 6 nodes...\n\u001b[0mMaster[0] -> Slots 0 - 5460\nMaster[1] -> Slots 5461 - 10922\nMaster[2] -> Slots 10923 - 16383\nAdding replica 10.10.0.15:6379 to 10.10.0.11:6379\nAdding replica 10.10.0.16:6379 to 10.10.0.12:6379\nAdding replica 10.10.0.14:6379 to 10.10.0.13:6379\nM: 3c79268beaf399aa52c063347b00faca7eed333e 10.10.0.11:6379\n   slots:[0-5460] (5461 slots) master\nM: 74a3eae503067f31dc57c8a4a4c550f3b78610eb 10.10.0.12:6379\n   slots:[5461-10922] (5462 slots) master\nM: 7b0c8f873e4805058c387344dc56af93866dc696 10.10.0.13:6379\n   slots:[10923-16383] (5461 slots) master\nS: 773f78c83177d1c0a837b8d720493ac6fdf31a74 10.10.0.14:6379\n   replicates 7b0c8f873e4805058c387344dc56af93866dc696\nS: b70fd8a0bcb5e4f7ba9b4dda7238d181acab477d 10.10.0.15:6379\n   replicates 3c79268beaf399aa52c063347b00faca7eed333e\nS: b8c760a44bb1a0753b679f9f528c17b4fc1543ae 10.10.0.16:6379\n   replicates 74a3eae503067f31dc57c8a4a4c550f3b78610eb\n\u001b[29;1m>>> Nodes configuration updated\n\u001b[0m\u001b[29;1m>>> Assign a different config epoch to each node\n\u001b[0m\u001b[29;1m>>> Sending CLUSTER MEET messages to join the cluster\n\u001b[0mWaiting for the cluster to join\n.\n\u001b[29;1m>>> Performing Cluster Check (using node 10.10.0.11:6379)\n\u001b[0mM: 3c79268beaf399aa52c063347b00faca7eed333e 10.10.0.11:6379\n   slots:[0-5460] (5461 slots) master\n   1 additional replica(s)\nS: b70fd8a0bcb5e4f7ba9b4dda7238d181acab477d 10.10.0.15:6379\n   slots: (0 slots) slave\n   replicates 3c79268beaf399aa52c063347b00faca7eed333e\nM: 7b0c8f873e4805058c387344dc56af93866dc696 10.10.0.13:6379\n   slots:[10923-16383] (5461 slots) master\n   1 additional replica(s)\nM: 74a3eae503067f31dc57c8a4a4c550f3b78610eb 10.10.0.12:6379\n   slots:[5461-10922] (5462 slots) master\n   1 additional replica(s)\nS: b8c760a44bb1a0753b679f9f528c17b4fc1543ae 10.10.0.16:6379\n   slots: (0 slots) slave\n   replicates 74a3eae503067f31dc57c8a4a4c550f3b78610eb\nS: 773f78c83177d1c0a837b8d720493ac6fdf31a74 10.10.0.14:6379\n   slots: (0 slots) slave\n   replicates 7b0c8f873e4805058c387344dc56af93866dc696\n\u001b[32;1m[OK] All nodes agree about slots configuration.\n\u001b[0m\u001b[29;1m>>> Check for open slots...\n\u001b[0m\u001b[29;1m>>> Check slots coverage...\n\u001b[0m\u001b[32;1m[OK] All 16384 slots covered.\n\u001b[0m"
+}
+
+PLAY RECAP *********************************************************************
+redis-node-1               : ok=13   changed=8    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+redis-node-2               : ok=9    changed=7    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+redis-node-3               : ok=9    changed=7    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+redis-node-4               : ok=9    changed=7    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+redis-node-5               : ok=9    changed=7    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+redis-node-6               : ok=9    changed=7    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

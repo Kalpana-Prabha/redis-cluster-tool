@@ -1,0 +1,64 @@
+---
+- name: Provision Redis Cluster
+  hosts: redis_nodes
+  become: yes
+  roles:
+    - redis
+
+- name: Form Redis Cluster
+  hosts: redis-node-1
+  become: yes
+  tasks:
+    - name: Wait for all Redis nodes to be ready
+      wait_for:
+        host: "{{ item }}"
+        port: 6379
+        timeout: 60
+      loop:
+        - 10.10.0.11
+        - 10.10.0.12
+        - 10.10.0.13
+        - 10.10.0.14
+        - 10.10.0.15
+        - 10.10.0.16
+
+    - name: Check if cluster is already formed
+      shell: |
+        redis-cli -h 10.10.0.11 cluster info | grep cluster_known_nodes | cut -d: -f2 | tr -d '\r'
+      register: known_nodes
+      changed_when: false
+
+    - name: Create Redis Cluster
+      shell: |
+        redis-cli --cluster create \
+          10.10.0.11:6379 \
+          10.10.0.12:6379 \
+          10.10.0.13:6379 \
+          10.10.0.14:6379 \
+          10.10.0.15:6379 \
+          10.10.0.16:6379 \
+          --cluster-replicas 1 --cluster-yes
+      register: cluster_result
+      when: known_nodes.stdout | int < 6
+
+    - name: Print cluster creation result
+      debug:
+        msg: "{{ cluster_result.stdout }}"
+      when: known_nodes.stdout | int < 6
+
+    - name: Print already-provisioned message
+      debug:
+        msg: >
+          Cluster already provisioned (cluster_known_nodes={{ known_nodes.stdout }}) -
+          skipping cluster creation (idempotent). Existing data and topology are untouched.
+      when: known_nodes.stdout | int >= 6
+
+    - name: Get final cluster topology
+      shell: |
+        redis-cli -h 10.10.0.11 cluster nodes
+      register: final_topology
+      changed_when: false
+
+    - name: Print final cluster topology
+      debug:
+        msg: "{{ final_topology.stdout_lines }}"

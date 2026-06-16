@@ -1,0 +1,20 @@
+
+PLAY [Cluster Status] **********************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [redis-node-1]
+
+TASK [Get cluster info] ********************************************************
+changed: [redis-node-1]
+
+TASK [Get cluster state] *******************************************************
+changed: [redis-node-1]
+
+TASK [Print status] ************************************************************
+ok: [redis-node-1] => {
+    "msg": "cluster_state:ok\nd5145f1dbec517a8fa0ee52cbce8451f8a1bdc25 10.10.0.14:6379@16379 master - 0 1781513443896 9 connected 10923-16383\nda07132b986ed75115e63a16824702d99f4a5a7b 10.10.0.13:6379@16379 slave d5145f1dbec517a8fa0ee52cbce8451f8a1bdc25 0 1781513442090 9 connected\n8e06d4d5402e5e4078d3e0b5428bf6a3ccbf91f4 10.10.0.12:6379@16379 slave dd34eb2519efa23fe731b7151177c1dfbf5c073c 0 1781513443000 8 connected\nbb7b9ddeef79ce8f46439c37e5a74b2d4e01aa37 10.10.0.15:6379@16379 master - 0 1781513443000 7 connected 0-5460\ndd34eb2519efa23fe731b7151177c1dfbf5c073c 10.10.0.16:6379@16379 master - 0 1781513443595 8 connected 5461-10922\nfdbef4c2f412ad95af6dd9a258a06b00e851f4ba 10.10.0.11:6379@16379 myself,slave bb7b9ddeef79ce8f46439c37e5a74b2d4e01aa37 0 1781513442000 7 connected"
+}
+
+PLAY RECAP *********************************************************************
+redis-node-1               : ok=4    changed=2    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
