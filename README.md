@@ -108,4 +108,4 @@ redis-cluster-tool/
 
 - Containers have no persistent volumes, so a container restart loses all Redis data and cluster state (the cluster must be re-provisioned).
 - Rolling upgrade takes roughly 15-20 minutes total because each node compiles Redis from source.
-- Stretch goals (scale out/in, automatic rollback, idempotent provisioning, structured JSON logging) are not implemented in this submission.
+- Stretch goals S1 (scale out), S2 (scale in), S3 (rollback), and S5 (structured logging) are not implemented. S4 (Idempotency) is implemented for both provision and upgrade commands.
